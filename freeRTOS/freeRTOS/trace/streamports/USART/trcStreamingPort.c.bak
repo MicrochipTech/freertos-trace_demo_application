@@ -1,0 +1,77 @@
+#include "trcRecorder.h"
+#include <avr/interrupt.h>
+
+#if (TRC_USE_TRACEALYZER_RECORDER == 1)
+#if(TRC_CFG_RECORDER_MODE == TRC_RECORDER_MODE_STREAMING)
+
+#include "stdint.h"
+
+/* Include files as needed, in this case it is files from STM32Cube FW_F7 V1.4.1 */
+
+#define BUFSIZE 64
+
+typedef struct{
+	uint32_t idx;
+	uint8_t data[BUFSIZE];
+}recBuf;
+
+/* Define size for the receive and transmit buffer over CDC */
+#define APP_RX_DATA_SIZE  8
+#define APP_TX_DATA_SIZE  64
+
+/* Received Data over USB are stored in this buffer       */
+volatile uint8_t UserRxBuffer[APP_RX_DATA_SIZE];
+volatile uint8_t rx_wr_ptr = 0;
+uint8_t rx_rd_ptr = 0;
+
+/* Send Data over USB CDC are stored in this buffer       */
+uint8_t UserTxBuffer[APP_TX_DATA_SIZE];
+
+
+ void usart_init(void)
+{
+	USART1.BAUD = 0x40;
+	USART1.CTRLB = USART_TXEN_bm | USART_RXEN_bm;
+	USART1.DBGCTRL = USART_DBGRUN_bm;
+	PORTC.DIRSET = PIN0_bm;
+	USART1.CTRLA = USART_RXCIF_bm;
+}
+
+/* The READ function, used in trcStreamingPort.h */
+int32_t usart_rx_pkt(void *data, uint32_t size, int32_t* NumBytes)
+{
+	uint8_t *rx_buff = (uint8_t *)data;
+	*NumBytes=size;
+	for (;size>0;size--)
+	{
+		while(rx_wr_ptr == rx_rd_ptr);
+		*rx_buff = UserRxBuffer[rx_rd_ptr];
+		rx_buff++;
+		rx_rd_ptr++;
+		rx_rd_ptr %= 8;
+	}
+	return 0;
+}
+
+/* The WRITE function, used in trcStreamingPort.h */
+int32_t usart_tx_pkt(void* data, uint32_t size, int32_t * noOfBytesSent )
+{
+	uint8_t * data_ptr = (uint8_t *)data;
+	for (;size > 0; size--)
+	{
+		while (!(USART1.STATUS & USART_DREIF_bm));
+		USART1.TXDATAL = *data_ptr;
+		data_ptr++;
+	}
+	return 0;
+}
+
+ISR(USART1_DRE_vect)
+{
+	UserRxBuffer[rx_wr_ptr++] = USART1.RXDATAL;
+	rx_wr_ptr %= 8;
+}
+
+#endif	/*(TRC_CFG_RECORDER_MODE == TRC_RECORDER_MODE_STREAMING)*/
+#endif  /*(TRC_USE_TRACEALYZER_RECORDER == 1)*/
+
